@@ -1376,6 +1376,8 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
     if should_exit:
         return {}, True, should_checkpoint, should_exit, exit_code, None, None
 
+    should_checkpoint = should_checkpoint or opt_param_scheduler.should_checkpoint()
+
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
         torch.cuda.empty_cache()

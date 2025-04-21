@@ -183,6 +183,14 @@ class OptimizerParamScheduler:
         assert coeff is not None
 
         return min_lr + coeff * delta_lr
+    
+    def should_checkpoint(self, buffer: int = 10) -> bool:
+        """Checkpoint at the infliction points of the WSD LR schedule."""
+        wsd_anneal_start_ = self.lr_decay_steps - self.wsd_decay_steps
+        infliction_points_and_buffers = [self.lr_warmup_steps + buffer, self.lr_warmup_steps - buffer,
+                                         wsd_anneal_start_ + buffer, wsd_anneal_start_ - buffer,
+                                         self.lr_warmup_steps, wsd_anneal_start_,]
+        return self.num_steps in infliction_points_and_buffers
 
     def step(self, increment: int) -> None:
         """Set lr for all parameters groups.
