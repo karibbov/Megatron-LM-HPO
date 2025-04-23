@@ -582,41 +582,6 @@ def get_batch_on_this_tp_rank(data_iterator):
 def update_use_dist_ckpt(args):
     args.use_dist_ckpt = args.ckpt_format != "torch"
 
-
-
-def scale_lr_cond(name, param, 
-                  input_scale:float = 1.0, 
-                  hidden_scale:float=1.0, 
-                  output_scale:float = 1.0,
-                  mlp_1_scale: float = 1.0,
-                  mlp_2_scale: float = 1.0,
-                  projection_scale: float = 1.0,
-                  bias_scale: float = 1.0) -> tuple[bool, float]:
-    """Check if the parameter LR should be scaled and return the scale and a flag."""
-    # print_rank_0(f"param name: {name}")
-    # if len(param.shape) == 1:
-    #     return False, 1.0
-    print_rank_0(f"param name: {name}, param shape: {param.shape}")
-    if name.endswith(".bias"):
-        return True, bias_scale
-    elif "word_embeddings.weight" in name:
-        return True, input_scale
-    elif "output_layer.weight" in name:
-        return True, output_scale
-    elif "linear_fc1.weight" in name:
-        return True, mlp_1_scale
-    elif "linear_fc2.weight" in name:
-        return True, mlp_2_scale
-    elif "linear_proj.weight" in name:
-        return True, projection_scale
-    elif len(param.shape) == 2 and name.endswith(".weight"):
-        # print_rank_0(f"scaled params: {name}")
-        return True, hidden_scale
-    else:
-        # print_rank_0(f"unscaled params: {name}")
-        return False, 1.0
-    
-
 def scale_wd_cond(name, param, 
                   input_scale:float = 1.0, 
                   hidden_scale:float=1.0, 
