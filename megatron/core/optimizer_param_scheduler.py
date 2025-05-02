@@ -186,10 +186,12 @@ class OptimizerParamScheduler:
     
     def should_checkpoint(self, buffer: int = 10) -> bool:
         """Checkpoint at the infliction points of the WSD LR schedule."""
+        if self.lr_decay_steps is None or self.wsd_decay_steps is None:
+            return False
         wsd_anneal_start_ = self.lr_decay_steps - self.wsd_decay_steps
         infliction_points_and_buffers = [self.lr_warmup_steps + buffer, self.lr_warmup_steps - buffer,
-                                         wsd_anneal_start_ + buffer, wsd_anneal_start_ - buffer,
-                                         self.lr_warmup_steps, wsd_anneal_start_,]
+                                        wsd_anneal_start_ + buffer, wsd_anneal_start_ - buffer,
+                                        self.lr_warmup_steps, wsd_anneal_start_,]
         return self.num_steps in infliction_points_and_buffers
 
     def step(self, increment: int) -> None:

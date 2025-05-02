@@ -198,7 +198,7 @@ class GPTModel(LanguageModule):
                 config.hidden_size,
                 self.vocab_size,
                 config=config,
-                init_method=config.init_method,
+                init_method=config.output_init_method,
                 bias=False,
                 skip_bias_add=False,
                 gather_output=not self.parallel_output,
@@ -386,6 +386,7 @@ class GPTModel(LanguageModule):
             and inference_context.materialize_only_last_token_logits
         ):
             hidden_states = hidden_states[-1:, :, :]
+        hidden_states *= self.config.output_multiplier
         logits, _ = self.output_layer(
             hidden_states, weight=output_weight, runtime_gather_output=runtime_gather_output
         )

@@ -56,7 +56,7 @@ class LanguageModelEmbedding(MegatronModule):
         self.word_embeddings = tensor_parallel.VocabParallelEmbedding(
             num_embeddings=self.vocab_size,
             embedding_dim=self.config.hidden_size,
-            init_method=self.config.init_method,
+            init_method=self.config.input_init_method,
             reduce_scatter_embeddings=self.reduce_scatter_embeddings,
             config=self.config,
             tp_group=self.tp_group,

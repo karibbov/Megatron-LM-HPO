@@ -782,16 +782,26 @@ def pretrain(
     else:
         checkpointing_context = {}
 
+
     scale_lr_function = functools.partial(scale_lr_cond, 
-                                          input_scale=args.get('input_scale', default=1.0),
-                                          output_scale=args.get('output_scale', default=1.0),
-                                          hidden_scale=args.get('hidden_scale', default=1.0),
-                                          bias_scale=args.get('bias_scale', default=1.0),)
+                                          input_scale=getattr(args, 'lr_input_scale', 1.0),
+                                          output_scale=getattr(args, 'lr_output_scale', 1.0),
+                                          mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),
+                                          mlp_2_scale=getattr(args, 'lr_mlp2_scale', 1.0),
+                                          projection_scale=getattr(args, 'lr_projection_scale', 1.0),
+                                          hidden_scale=getattr(args, 'lr_hidden_scale', 1.0),
+                                          bias_scale=getattr(args, 'lr_bias_scale', 1.0),)
     scale_wd_function = functools.partial(scale_wd_cond,
-                                          input_scale=args.get('input_scale', default=1.0),
-                                          output_scale=args.get('output_scale', default=1.0),
-                                          hidden_scale=args.get('hidden_scale', default=1.0),
-                                          bias_scale=args.get('bias_scale', default=0.0),)
+                                          input_scale=getattr(args, 'wd_input_scale', 1.0),
+                                          output_scale=getattr(args, 'wd_output_scale', 1.0),
+                                          mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),
+                                          mlp_2_scale=getattr(args, 'lr_mlp2_scale', 1.0),
+                                          projection_scale=getattr(args, 'lr_projection_scale', 1.0),
+                                          hidden_scale=getattr(args, 'wd_hidden_scale', 1.0),
+                                          bias_scale=getattr(args, 'wd_bias_scale', 0.0),)
+
+    # scale_lr_function = lambda x, y: False, 1
+    # scale_wd_function = lambda x, y: False, 1
 
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)

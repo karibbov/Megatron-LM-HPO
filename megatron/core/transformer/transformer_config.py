@@ -180,6 +180,45 @@ class TransformerConfig(ModelParallelConfig):
     training of very large models. This feature is only works when custom fsdp is turned on.
     """
 
+    output_init_method: Optional[Callable] = None
+    """Method to initialize output layer weights"""
+
+    output_init_method_scale: float = 1
+    """Standard deviation scale of initialization method for output layer."""
+
+    output_layer_init_method_scale: float = 1
+    """Standard deviation scale of initialization method for output of attention and mlp layers."""
+
+    input_init_method: Optional[Callable] = None
+    """Method to initialize input layer weights."""
+
+    input_init_method_scale: float = 1
+    """Standard deviation scale of initialization method."""
+
+    hidden_init_method: Optional[Callable] = None
+    """Method to initialize hidden layer weights."""
+    hidden_init_method_scale: float = 1
+    """Standard deviation scale of initialization method."""
+
+    bias_init_method: Optional[Callable] = None
+    """Method to initialize bias layer weights."""
+    bias_init_method_scale: float = 1
+    """Standard deviation scale of initialization method."""
+
+    mlp_init_method: Optional[Callable] = None
+    """Method to initialize mlp layer weights."""
+    mlp_init_method_scale: float = 1
+    """Standard deviation scale of initialization method."""
+
+    mlp_out_init_method: Optional[Callable] = None
+    """Method to initialize mlp output layer weights."""
+    mlp_out_init_method_scale: float = 1
+    """Standard deviation scale of initialization method."""
+
+    output_multiplier: float = 1.0
+    """Multiplier for the output layer weights. This is used for muP."""
+
+
     ####################
     # mixed-precision
     ####################
@@ -975,11 +1014,31 @@ class TransformerConfig(ModelParallelConfig):
             self.init_method = init_method_normal(self.init_method_std)
 
         if self.output_layer_init_method is None:
-            self.output_layer_init_method = scaled_init_method_normal(
-                self.init_method_std,
-                self.num_layers,
-                multiplier=2.0 if not self.is_hybrid_model else 1.0,
-            )
+            self.output_layer_init_method = init_method_normal(self.init_method_std * self.output_layer_init_method_scale)
+            # self.output_layer_init_method = scaled_init_method_normal(
+            #     self.init_method_std,
+            #     self.num_layers,
+            #     multiplier=2.0 if not self.is_hybrid_model else 1.0,
+            # )
+
+        # Set the init method for input, hidden and bias layers here
+        if self.input_init_method is None:
+            self.input_init_method = init_method_normal(self.init_method_std * self.input_init_method_scale)
+        
+        if self.hidden_init_method is None:
+            self.hidden_init_method = init_method_normal(self.init_method_std * self.hidden_init_method_scale)
+        
+        if self.bias_init_method is None:
+            self.bias_init_method = init_method_normal(self.init_method_std * self.bias_init_method_scale)
+
+        if self.output_init_method is None:
+            self.output_init_method = init_method_normal(self.init_method_std * self.output_init_method_scale)
+        
+        if self.mlp_init_method is None:
+            self.mlp_init_method = init_method_normal(self.init_method_std * self.mlp_init_method_scale)
+
+        if self.mlp_out_init_method is None:
+            self.mlp_out_init_method = init_method_normal(self.init_method_std * self.mlp_out_init_method_scale)
 
         if self.num_moe_experts is not None:
             assert not self.add_bias_linear, "Bias is not supported for MoE"

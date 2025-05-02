@@ -33,6 +33,7 @@ from megatron.core.utils import (
 from megatron.training.activations import squared_relu
 from megatron.training.utils import get_device_arch_version, update_use_dist_ckpt, print_rank_0
 from megatron.core.msc_utils import MultiStorageClientFeature
+from megatron.training.weight_init import init_scheme_from_args
 
 
 def add_megatron_arguments(parser: argparse.ArgumentParser):
@@ -68,6 +69,7 @@ def add_megatron_arguments(parser: argparse.ArgumentParser):
     parser = _add_config_logger_args(parser)
     parser = _add_rerun_machine_args(parser)
     parser = _add_msc_args(parser)
+    parser = _add_custom_args(parser)
 
     return parser
 
@@ -1083,6 +1085,13 @@ def core_transformer_config_from_args(args, config_class=None):
     if args.is_hybrid_model:
         kw_args['is_hybrid_model'] = args.is_hybrid_model
 
+    if args.softmax_scale_method == "sqrt":
+        kw_args['softmax_scale'] = None
+    elif args.softmax_scale_method == "linear":
+        kw_args['softmax_scale'] = 1 / args.kv_channels
+
+    kwargs_update = init_scheme_from_args(args)
+    kw_args.update(kwargs_update)
     # Return config.
     return config_class(**kw_args)
 
@@ -1875,6 +1884,74 @@ def _add_initialization_args(parser):
                        'distribution used for weight initialization.')
     group.add_argument('--init-method-xavier-uniform', action='store_true',
                        help='Enable Xavier uniform parameter initialization')
+
+    return parser
+
+def _add_custom_args(parser):
+    group = parser.add_argument_group(title='custom')
+
+    # Fully Decoupled LR for each layer type
+    group.add_argument('--lr_input_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the input layer (word embeddings)')
+    group.add_argument('--lr_output_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the output layer by this factor')
+    group.add_argument('--lr_mlp1_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the first MLP layer by this factor')
+    group.add_argument('--lr_mlp2_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the second MLP layer by this factor')
+    group.add_argument('--lr_projection_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the attention (output) projection layer by this factor')
+    group.add_argument('--lr_bias_scale', type=float, default=1.0,
+                        help='Scale the learning rate of the bias terms by this factor')
+    group.add_argument('--lr_hidden_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the all remaining layers by this factor')
+    
+    # Fully Decoupled weight decay for each layer type
+    group.add_argument('--wd_input_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the input layer (word embeddings)')
+    group.add_argument('--wd_output_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the output layer by this factor')
+    group.add_argument('--wd_mlp1_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the first MLP layer by this factor')
+    group.add_argument('--wd_mlp2_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the second MLP layer by this factor')
+    group.add_argument('--wd_projection_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the attention (output) projection layer by this factor')
+    group.add_argument('--wd_bias_scale', type=float, default=1.0,
+                        help='Scale the learning rate of the bias terms by this factor')
+    group.add_argument('--wd_hidden_scale', type=float, default=1.0,
+                       help='Scale the learning rate of the all remaining layers by this factor')
+    
+    # Initialization Scheme for each layer type
+    group.add_argument('--init_input_scale', type=float, default=1.0,
+                       help='Scale the initialization of the input layer (word embeddings)')
+    group.add_argument('--init_output_scale', type=float, default=1.0,
+                       help='Scale the initialization of the output layer by this factor')
+    group.add_argument('--init_mlp1_scale', type=float, default=1.0,
+                        help='Scale the initialization of the first MLP layer by this factor')
+    group.add_argument('--init_mlp2_scale', type=float, default=1.0,
+                        help='Scale the initialization of the second MLP layer by this factor')
+    group.add_argument('--init_projection_scale', type=float, default=1.0,
+                        help='Scale the initialization of the attention (output) projection layer by this factor')
+
+    group.add_argument('--init_hidden_scale', type=float, default=1.0,
+                        help='Scale the initialization of the all remaining layers by this factor')
+    
+    group.add_argument('--initialization_scheme', type=str, default="megatron", 
+                       choices=['scaled', 'gpt-neox', 'normal', 'megatron', 'scion', 'normed-scion', 'modular', 'mup'],
+                       help='Initialization scheme to use.')
+
+
+    group.add_argument('--softmax_scale_method', type=str, default='sqrt',
+                       choices=['sqrt', 'linear'],
+                       help='Softmax scaling method to use. ' \
+                        'sqrt: scale by sqrt(d_k) ' \
+                        'linear: scale by d_k')
+
+    group.add_argument('--output_multiplier', type=float, default=1.0,
+                          help='Output multiplier for the output layer. Used for muP.')
+    
+    
 
     return parser
 
