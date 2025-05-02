@@ -103,24 +103,27 @@ def _get_param_groups(
             is_expert_parallel = not getattr(param, 'allreduce', True)
 
             if no_weight_decay_cond is not None:
-                no_wd = no_weight_decay_cond(name, param)
+                no_wd, wd_mult = no_weight_decay_cond(name, param)
             else:
                 # Do not regularize biases and norm parameters.
                 no_wd = name.endswith(".bias") or len(param.shape) == 1
+                wd_mult = float(not no_wd)
 
             if scale_lr_cond is not None:
-                scale_lr = scale_lr_cond(name, param)
+                scale_lr, _lr_mult = scale_lr_cond(name, param)
             else:
                 scale_lr = False
+                _lr_mult = 1.0
+            
 
-            if not no_wd and not scale_lr:
-                wd_mult, _lr_mult = 1.0, 1.0
-            elif not no_wd and scale_lr:
-                wd_mult, _lr_mult = 1.0, lr_mult
-            elif no_wd and not scale_lr:
-                wd_mult, _lr_mult = 0.0, 1.0
-            else:
-                wd_mult, _lr_mult = 0.0, lr_mult
+            # if not no_wd and not scale_lr:
+            #     wd_mult, _lr_mult = 1.0, 1.0
+            # elif not no_wd and scale_lr:
+            #     wd_mult, _lr_mult = 1.0, lr_mult
+            # elif no_wd and not scale_lr:
+            #     wd_mult, _lr_mult = 0.0, 1.0
+            # else:
+            #     wd_mult, _lr_mult = 0.0, lr_mult
 
             is_decoupled_lr = False
             # For input/embedding and output layer: embedding.word_embeddings.weight /

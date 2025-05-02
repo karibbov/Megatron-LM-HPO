@@ -107,6 +107,8 @@ from .utils import (
     report_memory,
     unwrap_model,
     update_use_dist_ckpt,
+    scale_lr_cond,
+    scale_wd_cond
 )
 from .global_vars import (
     destroy_global_vars,
@@ -780,12 +782,26 @@ def pretrain(
     else:
         checkpointing_context = {}
 
+    scale_lr_function = functools.partial(scale_lr_cond, 
+                                          input_scale=args.get('input_scale', default=1.0),
+                                          output_scale=args.get('output_scale', default=1.0),
+                                          hidden_scale=args.get('hidden_scale', default=1.0),
+                                          bias_scale=args.get('bias_scale', default=1.0),)
+    scale_wd_function = functools.partial(scale_wd_cond,
+                                          input_scale=args.get('input_scale', default=1.0),
+                                          output_scale=args.get('output_scale', default=1.0),
+                                          hidden_scale=args.get('hidden_scale', default=1.0),
+                                          bias_scale=args.get('bias_scale', default=0.0),)
+
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
     app_metrics['app_build_optimizer_start_time'] = one_logger_utils.get_timestamp_in_ms()
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
-        model_provider, model_type, checkpointing_context=checkpointing_context
-    )
+        model_provider, model_type, 
+        scale_lr_cond=scale_lr_function, 
+        no_wd_decay_cond=scale_wd_function, 
+        checkpointing_context=checkpointing_context)
+
 
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate ' 'scheduler are built')

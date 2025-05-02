@@ -581,3 +581,40 @@ def get_batch_on_this_tp_rank(data_iterator):
 
 def update_use_dist_ckpt(args):
     args.use_dist_ckpt = args.ckpt_format != "torch"
+
+
+
+def scale_lr_cond(name, param, 
+                  input_scale:float = 1.0, 
+                  hidden_scale:float=1.0, 
+                  output_scale:float = 1.0,
+                  bias_scale: float = 1.0) -> bool, float:
+    """Check if the parameter LR should be scaled and return the scale and a flag."""
+    if len(param.shape) == 1:
+        return False, 1.0
+    elif name.endswith(".bias"):
+        return False, bias_scale
+    elif "word_embeddings.weight" in name:
+        return True, input_scale
+    elif "output_layer.weight" in name:
+        return True, output_scale
+    elif len(param.shape) == 2 and name.endswith(".weight"):
+        return True, hidden_scale
+    
+
+def scale_wd_cond(name, param, 
+                  input_scale:float = 1.0, 
+                  hidden_scale:float=1.0, 
+                  output_scale:float = 1.0,
+                  bias_scale: float = 0.0) -> bool, float:
+    """Check if the parameter LR should be scaled and return the scale and a flag."""
+    if len(param.shape) == 1:
+        return False, 1.0
+    elif name.endswith(".bias"):
+        return True, bias_scale
+    elif "word_embeddings.weight" in name:
+        return True, input_scale
+    elif "output_layer.weight" in name:
+        return True, output_scale
+    elif len(param.shape) == 2 and name.endswith(".weight"):
+        return True, hidden_scale
