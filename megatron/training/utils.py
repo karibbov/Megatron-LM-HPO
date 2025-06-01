@@ -7,6 +7,11 @@ import sys
 from datetime import datetime
 
 import torch
+from enum import Enum
+from typing import Dict, Tuple
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+
 
 try:
     from transformer_engine.pytorch.optimizers import multi_tensor_applier, multi_tensor_l2norm
@@ -583,70 +588,204 @@ def update_use_dist_ckpt(args):
     args.use_dist_ckpt = args.ckpt_format != "torch"
 
 
+class Parameterization(str, Enum):
+    MUP = "MUP"
+    SP = "SP"
+    NONE = "NONE"
 
-def scale_lr_cond(name, param, 
-                  input_scale:float = 1.0, 
-                  hidden_scale:float=1.0, 
-                  output_scale:float = 1.0,
-                  mlp_1_scale: float = 1.0,
-                  mlp_2_scale: float = 1.0,
-                  projection_scale: float = 1.0,
-                  bias_scale: float = 1.0) -> tuple[bool, float]:
-    """Check if the parameter LR should be scaled and return the scale and a flag."""
-    # print_rank_0(f"param name: {name}")
-    # if len(param.shape) == 1:
-    #     return False, 1.0
-    print_rank_0(f"param name: {name}, param shape: {param.shape}")
-    if name.endswith(".bias"):
-        return True, bias_scale
-    elif "word_embeddings.weight" in name:
-        return True, input_scale
-    elif "output_layer.weight" in name:
-        return True, output_scale
-    elif "linear_fc1.weight" in name:
-        return True, mlp_1_scale
-    elif "linear_fc2.weight" in name:
-        return True, mlp_2_scale
-    elif "linear_proj.weight" in name:
-        return True, projection_scale
-    elif len(param.shape) == 2 and name.endswith(".weight"):
-        # print_rank_0(f"scaled params: {name}")
-        return True, hidden_scale
+class ParameterCategory(Enum):
+    INPUT_WEIGHTS_AND_BIASES = 1
+    OUTPUT_WEIGHTS = 2
+    HIDDEN_WEIGHTS = 3
+
+class ParameterPattern(Enum):
+    """Enum for parameter name patterns with matching logic"""
+    BIAS = ".bias"
+    WORD_EMBEDDINGS = "word_embeddings.weight"
+    OUTPUT_LAYER = "output_layer.weight"
+    LINEAR_FC1 = "linear_fc1.weight"
+    LINEAR_FC2 = "linear_fc2.weight"
+    LINEAR_PROJ = "linear_proj.weight"
+    
+    def matches(self, name: str) -> bool:
+        return self.value in name
+
+class ScaleType(Enum):
+    BIAS = "bias_scale"
+    INPUT = "input_scale"
+    OUTPUT = "output_scale"
+    MLP1 = "mlp_1_scale"
+    MLP2 = "mlp_2_scale"
+    PROJECTION = "projection_scale"
+    HIDDEN = "hidden_scale"
+
+@dataclass
+class ParamConfig:
+    category: ParameterCategory
+    patterns: Tuple[ParameterPattern, ...]
+
+class BaseMultiplier(ABC):
+    def __init__(self, fan_in: int, fan_out: int):
+        self.fan_in = fan_in
+        self.fan_out = fan_out
+    
+    @abstractmethod
+    def for_param_type(self, category: ParameterCategory) -> float:
+        pass
+
+class MUPAdamLRMultiplier(BaseMultiplier):
+    def for_param_type(self, category: ParameterCategory) -> float:
+        return {
+            ParameterCategory.INPUT_WEIGHTS_AND_BIASES: 1.0,
+            ParameterCategory.OUTPUT_WEIGHTS: 1.0,
+            ParameterCategory.HIDDEN_WEIGHTS: 1 / self.fan_in
+        }.get(category, 1.0)
+
+class SPAdamLRMultiplier(BaseMultiplier):
+    def for_param_type(self, category: ParameterCategory) -> float:
+        return 1.0
+
+"""Categories correspond to the categories in the Mup paper Tensor Programs V, Table 8 (https://arxiv.org/abs/2203.03466)."""
+PARAM_CONFIGS: Dict[ScaleType, ParamConfig] = {
+    ScaleType.BIAS: ParamConfig(
+        category=ParameterCategory.INPUT_WEIGHTS_AND_BIASES,
+        patterns=(ParameterPattern.BIAS,)
+    ),
+    ScaleType.INPUT: ParamConfig(
+        category=ParameterCategory.INPUT_WEIGHTS_AND_BIASES,
+        patterns=(ParameterPattern.WORD_EMBEDDINGS,)
+    ),
+    ScaleType.OUTPUT: ParamConfig(
+        category=ParameterCategory.OUTPUT_WEIGHTS,
+        patterns=(ParameterPattern.OUTPUT_LAYER,)
+    ),
+    ScaleType.MLP1: ParamConfig(
+        category=ParameterCategory.HIDDEN_WEIGHTS,
+        patterns=(ParameterPattern.LINEAR_FC1,)
+    ),
+    ScaleType.MLP2: ParamConfig(
+        category=ParameterCategory.HIDDEN_WEIGHTS,
+        patterns=(ParameterPattern.LINEAR_FC2,)
+    ),
+    ScaleType.PROJECTION: ParamConfig(
+        category=ParameterCategory.HIDDEN_WEIGHTS,
+        patterns=(ParameterPattern.LINEAR_PROJ,)
+    ),
+    ScaleType.HIDDEN: ParamConfig(
+        category=ParameterCategory.HIDDEN_WEIGHTS,
+        patterns=()
+    )
+}
+
+def get_fan_in_and_fan_out(param: torch.Tensor) -> Tuple[int, int]:
+    """Compute fan_in and fan_out based on parameter shape."""
+    if param.ndim < 2:
+        # Handle biases and 1D parameters
+        return 1, param.shape[0] if param.ndim == 1 else 1
+    # Weight matrices (assumed [out_features, in_features] format)
+    return param.shape[1], param.shape[0]
+
+def get_lr_multiplier(
+    category: ParameterCategory,
+    parameterization: Parameterization,
+    fan_in: int,
+    fan_out: int
+) -> float:
+    """Get learning rate multiplier based on parameterization and category. The multipliers are based on Tensor Programs V paper, Table 8 (https://arxiv.org/abs/2203.03466)"""
+    if parameterization == Parameterization.NONE:
+        return 1.0
+    
+    if parameterization == Parameterization.MUP:
+        multiplier = MUPAdamLRMultiplier(fan_in, fan_out)
+    elif parameterization == Parameterization.SP: 
+        multiplier = SPAdamLRMultiplier(fan_in, fan_out)
     else:
-        # print_rank_0(f"unscaled params: {name}")
-        return False, 1.0
+        raise ValueError(f"Invalid parameterization: {parameterization}")
+    
+    return multiplier.for_param_type(category)
+
+def get_wd_multiplier(
+    category: ParameterCategory,
+    parameterization: Parameterization,
+    fan_in: int,
+    fan_out: int
+) -> float:
+    """Get weight decay multiplier based on parameterization and category."""
+    return 1 / get_lr_multiplier(
+        category,
+        parameterization,
+        fan_in,
+        fan_out
+    )
+
+def scale_lr_cond(
+    name: str,
+    param: torch.Tensor,
+    parameterization_type: Parameterization = Parameterization.NONE,
+    **scaling_multipliers: float
+) -> Tuple[bool, float]:
+    """Refactored function using enums for configuration"""
+    print('scale_lr_cond hello')
+    print('parameterization_type: ', parameterization_type)
+    matched_scale = None
+    for scale_type, config in PARAM_CONFIGS.items():
+        if any(pattern.matches(name) for pattern in config.patterns):
+            matched_scale = scale_type
+            break
+
+    if not matched_scale:
+        if param.ndim == 2 and name.endswith(".weight"):
+            matched_scale = ScaleType.HIDDEN
+        else:
+            return (False, 1.0)
+
+    scale_value = scaling_multipliers.get(matched_scale.value, 1.0)
+    if parameterization_type == Parameterization.NONE:
+        return (True, scale_value)
+
+    fan_in, fan_out = get_fan_in_and_fan_out(param)
+    multiplier = get_lr_multiplier(
+        config.category, 
+        parameterization_type, 
+        fan_in, 
+        fan_out
+    )
+    
+    return (True, multiplier) # should we still use the scale_value, or just return the multiplier?
     
 
-def scale_wd_cond(name, param, 
-                  input_scale:float = 1.0, 
-                  hidden_scale:float=1.0, 
-                  output_scale:float = 1.0,
-                  mlp_1_scale: float = 1.0,
-                  mlp_2_scale: float = 1.0,
-                  projection_scale: float = 1.0,
-                  bias_scale: float = 0.0) -> tuple[bool, float]:
-    """Check if the parameter LR should be scaled and return the scale and a flag."""
-    # if len(param.shape) == 1:
-    #     return False, 1.0
-    if name.endswith(".bias"):
-        return True, bias_scale
-    # module.module.embedding.word_embeddings.weight
-    elif "word_embeddings.weight" in name:
-        return True, input_scale
-    # module.module.output_layer.weight
-    elif "output_layer.weight" in name:
-        return True, output_scale
-    # module.module.decoder.layers.18.mlp.linear_fc1.weight
-    elif "linear_fc1.weight" in name:
-        return True, mlp_1_scale
-    # module.module.decoder.layers.18.mlp.linear_fc2.weight
-    elif "linear_fc2.weight" in name:
-        return True, mlp_2_scale
-    # module.module.decoder.layers.19.self_attention.linear_proj.weight
-    elif "linear_proj.weight" in name:
-        return True, projection_scale
-    elif len(param.shape) == 2 and name.endswith(".weight"):
-        print_rank_0(f"scaled params: {name}, param shape: {param.shape}")
-        return True, hidden_scale
-    else:
-        return False, 1.0
+def scale_wd_cond(
+    name: str,
+    param: torch.Tensor,
+    parameterization_type: Parameterization = Parameterization.NONE,
+    **scaling_multipliers: float
+) -> Tuple[bool, float]:
+    """Refactored function using enums for configuration"""
+
+    matched_scale = None
+    for scale_type, config in PARAM_CONFIGS.items():
+        if any(pattern.matches(name) for pattern in config.patterns):
+            matched_scale = scale_type
+            break
+
+    if not matched_scale:
+        if param.ndim == 2 and name.endswith(".weight"):
+            matched_scale = ScaleType.HIDDEN
+        else:
+            return (False, 1.0)
+
+    scale_value = scaling_multipliers.get(matched_scale.value, 0.0 if matched_scale == ScaleType.BIAS else 1.0)
+
+    if parameterization_type == Parameterization.NONE:
+        return (True, scale_value)
+
+    fan_in, fan_out = get_fan_in_and_fan_out(param)
+    multiplier = get_wd_multiplier(
+        config.category, 
+        parameterization_type, 
+        fan_in, 
+        fan_out
+    )
+    
+    return (True, multiplier)
+    

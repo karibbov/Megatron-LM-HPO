@@ -81,6 +81,7 @@ def init_scheme_from_args(args) -> dict:
     hidden_init_method_scale=args.init_hidden_scale
         # )
 
+    embedding_size = args.hidden_size
     if args.ffn_hidden_size is not None:
         ffn_size = args.ffn_hidden_size
         ffn_1_size = ffn_size
@@ -148,7 +149,6 @@ def init_scheme_from_args(args) -> dict:
         mlp_out_init_method = init_method_semi_orthogonal(scale=mlp_out_init_method_scale)
         hidden_init_method = init_method_semi_orthogonal(scale=hidden_init_method_scale)
     elif init_scheme == "scion":
-        embedding_size = args.hidden_size
         hidden_multiplier = math.sqrt(embedding_size) 
         input_init_method_scale *= math.sqrt(embedding_size)
         # Changes due to MLP layer width changing for scion/mup variants
@@ -166,7 +166,6 @@ def init_scheme_from_args(args) -> dict:
         mlp_out_init_method = init_method_semi_orthogonal(scale=mlp_out_init_method_scale)
         hidden_init_method = init_method_semi_orthogonal(scale=hidden_init_method_scale)
     elif init_scheme == "normed-scion":
-        embedding_size = args.hidden_size
         # hidden_multiplier = math.sqrt(embedding_size) 
         input_init_method_scale *= math.sqrt(embedding_size) /  args.padded_vocab_size
         # Changes due to MLP layer width changing for scion/mup variants
@@ -185,17 +184,25 @@ def init_scheme_from_args(args) -> dict:
         mlp_out_init_method = init_method_semi_orthogonal(scale=mlp_out_init_method_scale)
         hidden_init_method = init_method_semi_orthogonal(scale=hidden_init_method_scale)
     elif init_scheme == "mup":
-        embedding_size = args.hidden_size
-
         init_method = None
+        input_init_method_scale *= 1
         mlp_out_init_method_scale *= (ffn_size**-0.5)
         mlp_init_method_scale *= (embedding_size**-0.5)
         output_layer_init_method_scale *= (embedding_size**-0.5)
         hidden_init_method_scale *= (embedding_size**-0.5)
-
-        output_init_method_scale *= math.sqrt(embedding_size)
+        output_init_method_scale *= 1
+        
         kwargs_update["output_multiplier"] = args.output_multiplier / embedding_size 
-    
+    elif init_scheme == "sp":
+        # SP initialization scheme according to Mup paper (https://arxiv.org/abs/2203.03466)
+        init_method = None
+        # setting input_init_method_scale to 1 instead of 1/fan_in because fan_in here is vocab_size which does not scale with width, so any constant is fine. This is according to the Mup paper Appendix B.1 (https://arxiv.org/abs/2203.03466)
+        input_init_method_scale *= 1
+        hidden_init_method_scale *= (embedding_size**-0.5)
+        output_layer_init_method_scale *= (embedding_size**-0.5)
+        mlp_init_method_scale *= (embedding_size**-0.5)
+        mlp_out_init_method_scale *= (ffn_size**-0.5)
+        output_init_method_scale *= (embedding_size**-0.5)
     else:
         raise ValueError(f"Unknown initialization scheme: {init_scheme}")
     

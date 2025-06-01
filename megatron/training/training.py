@@ -96,6 +96,7 @@ from megatron.core.num_microbatches_calculator import (
 
 from .async_utils import maybe_finalize_async_save
 from .utils import (
+    Parameterization,
     append_to_progress_log,
     calc_params_l2_norm,
     check_adlr_autoresume_termination,
@@ -783,22 +784,24 @@ def pretrain(
         checkpointing_context = {}
 
 
-    scale_lr_function = functools.partial(scale_lr_cond, 
+    scale_lr_function = functools.partial(scale_lr_cond,
+                                          parameterization_type=getattr(args, 'parameterization_type', Parameterization.NONE),
                                           input_scale=getattr(args, 'lr_input_scale', 1.0),
                                           output_scale=getattr(args, 'lr_output_scale', 1.0),
                                           mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),
                                           mlp_2_scale=getattr(args, 'lr_mlp2_scale', 1.0),
                                           projection_scale=getattr(args, 'lr_projection_scale', 1.0),
                                           hidden_scale=getattr(args, 'lr_hidden_scale', 1.0),
-                                          bias_scale=getattr(args, 'lr_bias_scale', 1.0),)
+                                          bias_scale=getattr(args, 'lr_bias_scale', 1.0))
     scale_wd_function = functools.partial(scale_wd_cond,
+                                          parameterization_type=getattr(args, 'parameterization_type', Parameterization.NONE),
                                           input_scale=getattr(args, 'wd_input_scale', 1.0),
                                           output_scale=getattr(args, 'wd_output_scale', 1.0),
                                           mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),
                                           mlp_2_scale=getattr(args, 'lr_mlp2_scale', 1.0),
                                           projection_scale=getattr(args, 'lr_projection_scale', 1.0),
                                           hidden_scale=getattr(args, 'wd_hidden_scale', 1.0),
-                                          bias_scale=getattr(args, 'wd_bias_scale', 0.0),)
+                                          bias_scale=getattr(args, 'wd_bias_scale', 0.0))
 
     # scale_lr_function = lambda x, y: False, 1
     # scale_wd_function = lambda x, y: False, 1

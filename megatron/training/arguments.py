@@ -31,7 +31,7 @@ from megatron.core.utils import (
     is_torch_min_version,
 )
 from megatron.training.activations import squared_relu
-from megatron.training.utils import get_device_arch_version, update_use_dist_ckpt, print_rank_0
+from megatron.training.utils import Parameterization, get_device_arch_version, update_use_dist_ckpt, print_rank_0
 from megatron.core.msc_utils import MultiStorageClientFeature
 from megatron.training.weight_init import init_scheme_from_args
 
@@ -1890,6 +1890,9 @@ def _add_initialization_args(parser):
 def _add_custom_args(parser):
     group = parser.add_argument_group(title='custom')
 
+    group.add_argument('--parameterization_type', type=Parameterization, default=Parameterization.NONE,
+                        help='Type of Parameterization to use, which sets the multipliers accordingly')
+    
     # Fully Decoupled LR for each layer type
     group.add_argument('--lr_input_scale', type=float, default=1.0,
                        help='Scale the learning rate of the input layer (word embeddings)')
