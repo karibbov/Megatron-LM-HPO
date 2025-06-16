@@ -184,22 +184,33 @@ def init_scheme_from_args(args) -> dict:
         mlp_out_init_method = init_method_semi_orthogonal(scale=mlp_out_init_method_scale)
         hidden_init_method = init_method_semi_orthogonal(scale=hidden_init_method_scale)
     elif init_scheme == "mup":
+        base_embedding_size = 1
+        base_ffn_size = 1
+        if args.base_hidden_size is not None:
+            base_embedding_size = args.base_hidden_size
+            if args.base_ffn_hidden_size is not None:
+                base_ffn_size = args.base_ffn_hidden_size
+            elif args.gated_linear_unit or args.swiglu:
+                base_ffn_size = int((4 * base_embedding_size * 2 / 3) / 64) * 64
+            else:
+                base_ffn_size = base_embedding_size
+        
         init_method = None
         input_init_method_scale *= 1
         mlp_out_init_method_scale *= (ffn_size**-0.5)
         mlp_init_method_scale *= (embedding_size**-0.5)
-        output_layer_init_method_scale *= (embedding_size**-0.5)
+        output_layer_init_method_scale *= (embedding_size**-0.5) # Warning: this should be kv-channels * num-attention-heads if this is not equal to embedding size
         hidden_init_method_scale *= (embedding_size**-0.5)
-        output_init_method_scale *= 1
-        
-        kwargs_update["output_multiplier"] = args.output_multiplier / embedding_size 
+        output_init_method_scale *= (base_ffn_size**-0.5)
+
+        kwargs_update["output_multiplier"] = args.output_multiplier / (embedding_size / base_embedding_size)
     elif init_scheme == "sp":
         # SP initialization scheme according to Mup paper (https://arxiv.org/abs/2203.03466)
         init_method = None
         # setting input_init_method_scale to 1 instead of 1/fan_in because fan_in here is vocab_size which does not scale with width, so any constant is fine. This is according to the Mup paper Appendix B.1 (https://arxiv.org/abs/2203.03466)
         input_init_method_scale *= 1
         hidden_init_method_scale *= (embedding_size**-0.5)
-        output_layer_init_method_scale *= (embedding_size**-0.5)
+        output_layer_init_method_scale *= (embedding_size**-0.5) # Warning: this should be kv-channels * num-attention-heads if this is not equal to embedding size
         mlp_init_method_scale *= (embedding_size**-0.5)
         mlp_out_init_method_scale *= (ffn_size**-0.5)
         output_init_method_scale *= (embedding_size**-0.5)

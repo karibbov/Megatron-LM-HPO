@@ -713,9 +713,24 @@ def validate_args(args, defaults={}):
         else:
             args.ffn_hidden_size = 4 * args.hidden_size
 
+    if args.base_hidden_size is not None:
+        if args.base_ffn_hidden_size is None:
+            if args.swiglu:
+                args.base_ffn_hidden_size = int((4 * args.base_hidden_size * 2 / 3) / 64) * 64
+            else:
+                args.base_ffn_hidden_size = 4 * args.base_hidden_size
+    else:
+        args.base_hidden_size = 1
+        args.base_ffn_hidden_size = 1
+        args.base_num_attention_heads = 1
+        args.base_kv_channels = 1
+
     if args.kv_channels is None:
         assert args.hidden_size % args.num_attention_heads == 0
         args.kv_channels = args.hidden_size // args.num_attention_heads
+    if args.base_kv_channels is None:
+        assert args.base_hidden_size % args.base_num_attention_heads == 0
+        args.base_kv_channels = args.base_hidden_size // args.base_num_attention_heads
 
     if args.seq_length is not None and args.context_parallel_size > 1:
         assert args.seq_length % (args.context_parallel_size * 2) == 0, \
@@ -1089,6 +1104,8 @@ def core_transformer_config_from_args(args, config_class=None):
         kw_args['softmax_scale'] = None
     elif args.softmax_scale_method == "linear":
         kw_args['softmax_scale'] = 1 / args.kv_channels
+    elif args.softmax_scale_method == "linear-with-base":
+        kw_args['softmax_scale'] = (args.base_kv_channels ** 0.5) / (args.kv_channels)
 
     kwargs_update = init_scheme_from_args(args)
     kw_args.update(kwargs_update)
@@ -1303,6 +1320,20 @@ def _add_network_size_args(parser):
                        'attention. This is set to '
                        '   args.hidden_size // args.num_attention_heads '
                        'if not provided.')
+
+    group.add_argument('--base-hidden-size', type=int, default=None,
+                       help='Base tansformer hidden size used for µP.')
+    group.add_argument('--base-ffn-hidden-size', type=int, default=None,
+                       help='Base transformer Feed-Forward Network hidden size used for µP. '
+                       'This is set to 4*base-hidden-size if not provided')
+    group.add_argument('--base-num-attention-heads', type=int, default=None,
+                       help='Base number of transformer attention heads used for µP.')
+    group.add_argument('--base-kv-channels', type=int, default=None,
+                       help='Base projection weights dimension in multi-head '
+                       'attention used for µP. This is set to '
+                       '   args.base_hidden_size // args.base_num_attention_heads '
+                       'if not provided.')
+    
     group.add_argument('--group-query-attention', action='store_true',
                           help='Use group-query attention.')
     group.add_argument('--num-query-groups', type=int, default=1)
@@ -1946,10 +1977,11 @@ def _add_custom_args(parser):
 
 
     group.add_argument('--softmax_scale_method', type=str, default='sqrt',
-                       choices=['sqrt', 'linear'],
+                       choices=['sqrt', 'linear', 'linear-with-base'],
                        help='Softmax scaling method to use. ' \
                         'sqrt: scale by sqrt(d_k) ' \
-                        'linear: scale by d_k')
+                        'linear: scale by d_k' \
+                        'linear-with-base: scale by d_k / base_d_k')
 
     group.add_argument('--output_multiplier', type=float, default=1.0,
                           help='Output multiplier for the output layer. Used for muP.')

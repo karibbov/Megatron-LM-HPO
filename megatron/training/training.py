@@ -786,6 +786,8 @@ def pretrain(
 
     scale_lr_function = functools.partial(scale_lr_cond,
                                           parameterization_type=getattr(args, 'parameterization_type', Parameterization.NONE),
+                                          base_hidden_size=getattr(args, 'base_hidden_size', 1),
+                                          base_ffn_hidden_size=getattr(args, 'base_ffn_hidden_size', 1),
                                           input_scale=getattr(args, 'lr_input_scale', 1.0),
                                           output_scale=getattr(args, 'lr_output_scale', 1.0),
                                           mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),
@@ -795,6 +797,8 @@ def pretrain(
                                           bias_scale=getattr(args, 'lr_bias_scale', 1.0))
     scale_wd_function = functools.partial(scale_wd_cond,
                                           parameterization_type=getattr(args, 'parameterization_type', Parameterization.NONE),
+                                          base_hidden_size=getattr(args, 'base_hidden_size', 1),
+                                          base_ffn_hidden_size=getattr(args, 'base_ffn_hidden_size', 1),
                                           input_scale=getattr(args, 'wd_input_scale', 1.0),
                                           output_scale=getattr(args, 'wd_output_scale', 1.0),
                                           mlp_1_scale=getattr(args, 'lr_mlp1_scale', 1.0),

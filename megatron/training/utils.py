@@ -625,9 +625,10 @@ class ParamConfig:
     patterns: Tuple[ParameterPattern, ...]
 
 class BaseMultiplier(ABC):
-    def __init__(self, fan_in: int, fan_out: int):
+    def __init__(self, fan_in: int, fan_out: int, base_fan_in: int = 1):
         self.fan_in = fan_in
         self.fan_out = fan_out
+        self.base_fan_in = base_fan_in
     
     @abstractmethod
     def for_param_type(self, category: ParameterCategory) -> float:
@@ -638,7 +639,7 @@ class MUPAdamLRMultiplier(BaseMultiplier):
         return {
             ParameterCategory.INPUT_WEIGHTS_AND_BIASES: 1.0,
             ParameterCategory.OUTPUT_WEIGHTS: 1.0,
-            ParameterCategory.HIDDEN_WEIGHTS: 1 / self.fan_in
+            ParameterCategory.HIDDEN_WEIGHTS: 1 / (self.fan_in / self.base_fan_in),
         }.get(category, 1.0)
 
 class SPAdamLRMultiplier(BaseMultiplier):
@@ -685,20 +686,30 @@ def get_fan_in_and_fan_out(param: torch.Tensor) -> Tuple[int, int]:
     # Weight matrices (assumed [out_features, in_features] format)
     return param.shape[1], param.shape[0]
 
+def get_base_fan_in(matched_scale_type: ScaleType, base_hidden_size: int, base_ffn_hidden_size: int) -> int:
+    """Get base fan_in for MuP based on scale type."""
+    if matched_scale_type == ScaleType.MLP2:
+        return base_ffn_hidden_size
+    elif matched_scale_type in (ScaleType.INPUT, ScaleType.OUTPUT, ScaleType.MLP1, ScaleType.PROJECTION, ScaleType.HIDDEN):
+        return base_hidden_size
+    else:
+        return 1
+
 def get_lr_multiplier(
     category: ParameterCategory,
     parameterization: Parameterization,
     fan_in: int,
-    fan_out: int
+    fan_out: int,
+    base_fan_in: int
 ) -> float:
     """Get learning rate multiplier based on parameterization and category. The multipliers are based on Tensor Programs V paper, Table 8 (https://arxiv.org/abs/2203.03466)"""
     if parameterization == Parameterization.NONE:
         return 1.0
     
     if parameterization == Parameterization.MUP:
-        multiplier = MUPAdamLRMultiplier(fan_in, fan_out)
+        multiplier = MUPAdamLRMultiplier(fan_in, fan_out, base_fan_in)
     elif parameterization == Parameterization.SP: 
-        multiplier = SPAdamLRMultiplier(fan_in, fan_out)
+        multiplier = SPAdamLRMultiplier(fan_in, fan_out, base_fan_in)
     else:
         raise ValueError(f"Invalid parameterization: {parameterization}")
     
@@ -708,7 +719,8 @@ def get_wd_multiplier(
     category: ParameterCategory,
     parameterization: Parameterization,
     fan_in: int,
-    fan_out: int
+    fan_out: int,
+    base_fan_in: int
 ) -> float:
     """Get weight decay multiplier based on parameterization and category."""
     if parameterization == Parameterization.MUP:
@@ -716,7 +728,8 @@ def get_wd_multiplier(
             category,
             parameterization,
             fan_in,
-            fan_out
+            fan_out,
+            base_fan_in
         )
     
     return 1.0
@@ -725,9 +738,10 @@ def scale_lr_cond(
     name: str,
     param: torch.Tensor,
     parameterization_type: Parameterization = Parameterization.NONE,
+    base_hidden_size: int = 1,
+    base_ffn_hidden_size: int = 1,
     **scaling_multipliers: float
 ) -> Tuple[bool, float]:
-    """Refactored function using enums for configuration"""
     matched_scale = None
     for scale_type, config in PARAM_CONFIGS.items():
         if any(pattern.matches(name) for pattern in config.patterns):
@@ -745,24 +759,25 @@ def scale_lr_cond(
         return (True, scale_value)
 
     fan_in, fan_out = get_fan_in_and_fan_out(param)
+    base_fan_in = get_base_fan_in(matched_scale, base_hidden_size, base_ffn_hidden_size)
     multiplier = get_lr_multiplier(
         config.category, 
         parameterization_type, 
         fan_in, 
-        fan_out
+        fan_out,
+        base_fan_in
     )
     
     return (True, scale_value * multiplier) # should we still use the scale_value, or just return the multiplier?
-    
 
 def scale_wd_cond(
     name: str,
     param: torch.Tensor,
     parameterization_type: Parameterization = Parameterization.NONE,
+    base_hidden_size: int = 1,
+    base_ffn_hidden_size: int = 1,
     **scaling_multipliers: float
 ) -> Tuple[bool, float]:
-    """Refactored function using enums for configuration"""
-
     matched_scale = None
     for scale_type, config in PARAM_CONFIGS.items():
         if any(pattern.matches(name) for pattern in config.patterns):
@@ -781,12 +796,13 @@ def scale_wd_cond(
         return (True, scale_value)
 
     fan_in, fan_out = get_fan_in_and_fan_out(param)
+    base_fan_in = get_base_fan_in(matched_scale, base_hidden_size, base_ffn_hidden_size)
     multiplier = get_wd_multiplier(
         config.category, 
         parameterization_type, 
         fan_in, 
-        fan_out
+        fan_out,
+        base_fan_in
     )
     
     return (True, scale_value * multiplier)
-    
