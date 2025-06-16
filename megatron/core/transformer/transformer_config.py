@@ -202,7 +202,7 @@ class TransformerConfig(ModelParallelConfig):
 
     bias_init_method: Optional[Callable] = None
     """Method to initialize bias layer weights."""
-    bias_init_method_scale: float = 1
+    bias_init_method_scale: float = 0
     """Standard deviation scale of initialization method."""
 
     mlp_init_method: Optional[Callable] = None
