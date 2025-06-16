@@ -711,12 +711,15 @@ def get_wd_multiplier(
     fan_out: int
 ) -> float:
     """Get weight decay multiplier based on parameterization and category."""
-    return 1 / get_lr_multiplier(
-        category,
-        parameterization,
-        fan_in,
-        fan_out
-    )
+    if parameterization == Parameterization.MUP:
+        return 1 / get_lr_multiplier(
+            category,
+            parameterization,
+            fan_in,
+            fan_out
+        )
+    
+    return 1.0
 
 def scale_lr_cond(
     name: str,
@@ -725,8 +728,6 @@ def scale_lr_cond(
     **scaling_multipliers: float
 ) -> Tuple[bool, float]:
     """Refactored function using enums for configuration"""
-    print('scale_lr_cond hello')
-    print('parameterization_type: ', parameterization_type)
     matched_scale = None
     for scale_type, config in PARAM_CONFIGS.items():
         if any(pattern.matches(name) for pattern in config.patterns):
@@ -751,7 +752,7 @@ def scale_lr_cond(
         fan_out
     )
     
-    return (True, multiplier) # should we still use the scale_value, or just return the multiplier?
+    return (True, scale_value * multiplier) # should we still use the scale_value, or just return the multiplier?
     
 
 def scale_wd_cond(
@@ -787,5 +788,5 @@ def scale_wd_cond(
         fan_out
     )
     
-    return (True, multiplier)
+    return (True, scale_value * multiplier)
     
